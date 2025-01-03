@@ -1,14 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
+﻿using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml.Packaging;
-using System.IO;
 using System.Xml;
 using System.Xml.Linq;
 using CommandLine;
+using DocumentFormat.OpenXml.Wordprocessing;
+using DocumentFormat.OpenXml;
 
 namespace DocxMerge
 {
@@ -52,18 +48,14 @@ namespace DocxMerge
                 if (verbose) Console.WriteLine("Opening {0} for writing", output);
                 using (WordprocessingDocument doc = WordprocessingDocument.Open(output, true))
                 {
-                    int fileId = 0;
                     foreach (var filepath in inputFiles.Skip(1))
                     {
                         if (verbose) Console.WriteLine("Adding {0} to {1}", filepath, output);
-                        fileId++;
-                        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-                        XNamespace r = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
-                        string altChuckId = string.Format("AltChuckId{0}", fileId);
+                        string altChuckId = "id" + Guid.NewGuid().ToString();
                         var mainPart = doc.MainDocumentPart;
                         var chunk = mainPart.AddAlternativeFormatImportPart(
-                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+                            AlternativeFormatImportPartType.WordprocessingML,
                             altChuckId);
 
                         if (repairSpacing)
@@ -71,11 +63,25 @@ namespace DocxMerge
 
                         using (FileStream fileStream = File.Open(filepath, FileMode.Open))
                             chunk.FeedData(fileStream);                        
-                        var altChunk = new XElement(w + "altChunk", new XAttribute(r + "id", altChuckId));
-                        var mainDocumentXDoc = GetXDocument(doc);
+
+                        OpenXmlCompositeElement target = null;
                         
-                        mainDocumentXDoc.Root.Element(w + "body").Elements(w + "p").Last().AddAfterSelf(altChunk);                        
-                        SaveXDocument(doc, mainDocumentXDoc);                        
+                        try 
+                        {
+                            target = mainPart.Document.Body.Elements<AltChunk>().Last();
+                        }
+                        catch
+                        {
+                            target = mainPart.Document.Body.Elements<Paragraph>().Last();
+                        }
+
+                        AltChunk altChunk = new AltChunk();
+                        altChunk.Id = altChuckId;
+
+                        mainPart.Document
+                            .Body
+                            .InsertAfter(altChunk, target);  
+                        mainPart.Document.Save();        
                     }
                 }
                 
